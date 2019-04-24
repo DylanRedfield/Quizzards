@@ -21,6 +21,8 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.nn.utils import clip_grad_norm_
 
+from allennlp.modules.elmo import Elmo, batch_to_ids
+
 
 # --- QUIZBOWL DATASET UTILITY FUNCTIONS - Do NOT Edit ---
 
@@ -239,11 +241,35 @@ class TfidfGuesser:
 # TO DO:
 class ElmoGuesser:
     def __init__(self):
-        self.tfidf_vectorizer = None
-        self.tfidf_matrix = None
+        self.sentence_matrix = None
         self.i_to_ans = None
     def train(self):
-        print('Elmo Guesser -> train')
+         '''
+        Must be passed the training data - list of questions from the QuizBowlDataset class
+        '''
+        questions, answers = [], []
+        for ques in training_data:
+            questions.append(ques.sentences)
+            answers.append(ques.page)
+
+        answer_docs = defaultdict(str)
+        for q, ans in zip(questions, answers):
+            text = ' '.join(q)
+            answer_docs[ans] += ' ' + text
+
+        x_array = []
+        y_array = []
+        for ans, doc in answer_docs.items():
+            x_array.append(doc)
+            y_array.append(ans)
+
+        self.i_to_ans = {i: ans for i, ans in enumerate(y_array)}
+
+        character_ids = batch_to_ids(questions)
+        embeds = elmo(character_ids)
+
+        self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)
+       
     def guess(self):
         print('Elmo Guesser -> guess')
     def save(self):
