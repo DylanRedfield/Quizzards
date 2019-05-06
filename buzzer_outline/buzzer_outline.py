@@ -100,6 +100,9 @@ class QantaDatabase:
 		self.guess_questions = [q for q in self.mapped_questions if q.fold == 'guess' + split]
 		self.buzz_questions = [q for q in self.mapped_questions if q.fold == 'buzz' + split]
 
+class TriviaQADatabase:
+    def __init__(selfself, split):
+        dataset_path = os.path.join('..', 'split', 'json')
 
 class QuizBowlDataset:
 	def __init__(self, *, guesser=False, buzzer=False, split='train'):

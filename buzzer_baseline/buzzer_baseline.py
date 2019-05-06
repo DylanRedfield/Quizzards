@@ -511,50 +511,6 @@ def loss_fn(outputs, labels):
     # cross entropy loss for all non 'PAD' tokens
     return -torch.sum(outputs) / num_tokens
 
-def dev_fn(dev_ques_texts, model, dev_loader):
-    for idx, batch in enumerate(dev_loader):
-        question_feature_vec = batch['feature_vec'].to(device)
-        question_len = batch['len'].to(device)
-        labels = batch['labels'].to(device)
-
-        ####Your code here ---
-
-        # get the output from the model
-        logits = model.forward(question_feature_vec, question_len)
-
-        # get error, num_examples using accuracy_fn defined previously
-        error, num_examples = accuracy_fn(logits, labels)
-
-        # reshape labels to give a flat vector of length batch_size*seq_len
-        labels = labels.contiguous()
-        labels = labels.view(-1)
-
-        # flatten all predictions
-        logits = logits.contiguous()
-        logits = logits.view(-1, 2)  # 2 is the number of labels
-
-        # create mask - remember, we padded using -1 for our labels in batchify
-        mask = (labels > -1).float()
-
-        # these are the actual number of examples ignoring padded stuff
-        num_examples = int(torch.sum(mask).data)
-
-        # get the non-zero indices of the mask - these are the corresponding indices in logits/labels
-        # that contain data of value (rest is just padded)
-        indices = torch.nonzero(mask.data).squeeze()
-
-        # get the logits corresponding to non-padded values as given by non-zero indices of mask
-        logits = torch.index_select(logits, 0, indices)
-
-        # get the logits corresponding to non-padded values as given by non-zero indices of mask
-        labels = torch.index_select(labels, 0, indices)
-
-        top_n, top_i = logits.topk(1)
-
-        error = torch.nonzero(top_i.squeeze() - torch.LongTensor(labels)).size(0)
-
-        error, num_examples
-
 
 # You need to write code inside this function
 def train(args, model, train_data_loader, dev_data_loader, device):
@@ -584,6 +540,7 @@ def train(args, model, train_data_loader, dev_data_loader, device):
         labels = batch['labels'].to(device)
 
         #### Your code here ----
+        # print('TRAIN: ', question_feature_vec)
 
         # zero out
         model.zero_grad()
@@ -645,6 +602,7 @@ def evaluate(data_loader, model, device):
         question_len = batch['len'].to(device)
         labels = batch['labels'].to(device)
 
+        # print('EVALUATE: ', question_feature_vec)
         ####Your code here ---
 
         # get the output from the model
@@ -684,8 +642,6 @@ class RNNBuzzer(nn.Module):
 
         # define linear layer going from hidden to output.
         self.hidden_to_label = nn.Linear(n_hidden, n_output)
-
-        # self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
 
         # ---you can add other things like dropout between two layers, but do so in forward function below,
         # as we have to perform an extra step on the output of LSTM before going to linear layer(s).
@@ -790,7 +746,7 @@ if __name__ == "__main__":
         print('Generating Guesses for Dev Buzzer Data')
         dev_qnums, dev_answers, dev_char_indices, dev_ques_texts, dev_ques_lens, dev_guesses_and_scores = \
             generate_guesses_and_scores(guesser_model, dev_buzz_questions, args.n_guesses, char_skip=args.char_skip)
-        print('DEV QUES[0]', dev_ques_texts[0])
+        # print('DEV QUES[0]', dev_ques_texts[0])
         print('Generating Guesses for Test Buzzer Data')
         test_qnums, test_answers, test_char_indices, test_ques_texts, test_ques_lens, test_guesses_and_scores = \
             generate_guesses_and_scores(guesser_model, test_buzz_questions, args.n_guesses, char_skip=args.char_skip)
@@ -831,9 +787,6 @@ if __name__ == "__main__":
     for epoch in range(args.num_epochs):
         print('start epoch %d' % (epoch + 1))
         train_acc, dev_acc = train(args, model, train_loader, dev_loader, device)
-        dev_fn(dev_ques_texts, model, dev_loader)
-
-
 
     if args.see_test_accuracy:
         print('The Final Test Set Accuracy')
