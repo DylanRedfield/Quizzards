@@ -1,25 +1,50 @@
 import argparse
-import nltk
-import json
-import pandas as pd
 import numpy as np
 import time
 import os
-from os import path
-from typing import List, Dict, Iterable, Optional, Tuple, NamedTuple
-from collections import defaultdict
-import pickle
-from sklearn.feature_extraction.text import TfidfVectorizer
-import random
+from typing import Dict, NamedTuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from torch.autograd import Variable
 from torch.nn.utils import clip_grad_norm_
+
+from typing import List, Optional, Tuple
+from collections import defaultdict
+import pickle
+import json
+
+import click
+from sklearn.feature_extraction.text import TfidfVectorizer
+from flask import Flask, jsonify, request
+from os import path
+# from . import util
+
+
+from allennlp.modules.elmo import Elmo, batch_to_ids
+
+options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json"
+weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
+
+TFIDF_MODEL_PATH = 'tfidf.pickle'
+BUZZER_MODEL_PATH = 'buzzer.pickle'
+BUZZ_NUM_GUESSES = 10
+BUZZ_THRESHOLD = 0.3
+
+GUESSER_TRAIN_FOLD = 'guesstrain'
+BUZZER_TRAIN_FOLD = 'buzztrain'
+TRAIN_FOLDS = {GUESSER_TRAIN_FOLD, BUZZER_TRAIN_FOLD}
+
+# Guesser and buzzers produce reports on these for cross validation
+GUESSER_DEV_FOLD = 'guessdev'
+BUZZER_DEV_FOLD = 'buzzdev'
+DEV_FOLDS = {GUESSER_DEV_FOLD, BUZZER_DEV_FOLD}
+
+# System-wide cross validation and testing
+GUESSER_TEST_FOLD = 'guesstest'
+BUZZER_TEST_FOLD = 'buzztest'
 
 
 # --- QUIZBOWL DATASET UTILITY FUNCTIONS - Do NOT Edit ---
@@ -78,13 +103,34 @@ class Question(NamedTuple):
         char_indices = list(range(char_skip, len(self.text) + char_skip, char_skip))
         return [self.text[:i] for i in char_indices], char_indices
 
+class QuestionDataset(Dataset):
+    """
+    Pytorch data class for questions
+    """
+
+    ###You don't need to change this funtion
+    def __init__(self, examples):
+        self.questions = []
+        self.labels = []
+
+        for qq, ll in examples:
+            self.questions.append(qq)
+            self.labels.append(ll)
+
+    ###You don't need to change this funtion
+    def __getitem__(self, index):
+        return self.questions[index], self.labels[index]
+
+    ###You don't need to change this funtion
+    def __len__(self):
+        return len(self.questions)
 
 class QantaDatabase:
     def __init__(self, split):
         '''
         split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
         '''
-        dataset_path = os.path.join('..', 'qanta.' + split + '.json')
+        dataset_path = os.path.join('../../../', 'qanta.' + split + '.json')
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
@@ -96,6 +142,9 @@ class QantaDatabase:
         self.guess_questions = [q for q in self.mapped_questions if q.fold == 'guess' + split]
         self.buzz_questions = [q for q in self.mapped_questions if q.fold == 'buzz' + split]
 
+class TriviaQADatabase:
+    def __init__(selfself, split):
+        print('need to do')
 
 class QuizBowlDataset:
     def __init__(self, *, guesser=False, buzzer=False, split='train'):
@@ -129,10 +178,118 @@ class QuizBowlDataset:
 
         return questions
 
+# TO DO:
+class TriviaQADataset:
+    def __init__(self, *, guesser=False, buzzer=False, split='train'):
+        """
+        Initialize a new quiz bowl data set
+        guesser = True/False -> to use data from the guesser fold or not
+        buzzer = True/False -> to use data from the buzzer fold or not
+        split can be {'train', 'dev', 'test'}
+        Together, these three parameters (two bools and one str) specify which specific fold's data to return - 'guesstrain'/'buzztrain'/'guessdev'/'buzzdev'/'guesstest'/'buzztest'
+        """
+        super().__init__()
+        if not guesser and not buzzer:
+            raise ValueError('Requesting a dataset which produces neither guesser or buzzer training data is invalid')
+
+        if guesser and buzzer:
+            print('Using TriviaQADataset with guesser and buzzer training data, make sure you know what you are doing!')
+
+        # TO DO:
+        # self.db = QantaDatabase(split)
+        # self.guesser = guesser
+        # self.buzzer = buzzer
+
+        print('TRIVIA QA Dataset')
 
 # --- QUIZBOWL DATASET UTILITY FUNCTIONS END---
+class BuzzerGuesser:
+    def __init__(self):
+        self.rnn_model = RNNBuzzer()
 
-###You don't need to change anything in this class
+    def train(self, training_data, tfidf_guesser) -> None:
+        train_buzz_questions = training_data
+        n_guesses = 10
+        char_skip = 50
+        batch_size = 8
+        num_epochs = 25
+
+        train_qnums, train_answers, train_char_indices, train_ques_texts, train_ques_lens, train_guesses_and_scores = \
+            generate_guesses_and_scores(tfidf_guesser, train_buzz_questions, n_guesses, char_skip=char_skip)
+
+        train_exs = create_feature_vecs_and_labels(train_guesses_and_scores, train_answers, n_guesses)
+
+        train_dataset = QuestionDataset(train_exs)
+
+        train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, num_workers=0,
+                                  collate_fn=batchify)
+
+        for epoch in range(num_epochs):
+            self.rnn_model.train()
+            optimizer = torch.optim.Adam(self.rnn_model.parameters())
+
+            for idx, batch in enumerate(train_loader):
+                question_feature_vec = batch['feature_vec']
+                question_len = batch['len']
+                labels = batch['labels']
+
+                self.rnn_model.zero_grad()
+
+                logits = self.rnn_model.forward(question_feature_vec, question_len)
+                loss = loss_fn(logits, labels)
+                optimizer.step()
+                loss.backward()
+
+                clip_grad_norm_(self.rnn_model.parameters(), 5)
+
+    # TO DO: THIS IS MOST LIKELY WRONG AND NEEDS TO BE FIXED
+    def guess(self, tfidf_guesser, questions: List[str]) -> List[List[Tuple[str, float]]]:
+        char_skip = 50
+        n_guesses = 5
+        batch_size = 8
+
+        test_qnums, test_answers, test_char_indices, test_ques_texts, test_ques_lens, test_guesses_and_scores = \
+            generate_guesses_and_scores(tfidf_guesser, questions, n_guesses, char_skip)
+
+        test_exs = create_feature_vecs_and_labels(test_guesses_and_scores, test_answers, n_guesses)
+
+        test_dataset = QuestionDataset(test_exs)
+        test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, num_workers=0,
+                                 collate_fn=batchify)
+
+        self.rnn_model.eval()
+        for idx, batch in enumerate(test_loader):
+            question_feature_vec = batch['feature_vec']
+            question_len = batch['len']
+
+            logits = self.rnn_model(question_feature_vec, question_len)
+
+            (first, second) = logits
+
+            if first > second:
+                return False
+            else:
+                return True
+
+    # logits = self.rnn_model(test_exs, len(test_exs))
+
+    def save(self):
+        with open(BUZZER_MODEL_PATH, 'wb') as f:
+            pickle.dump({
+                'rnn_model': self.rnn_model
+            }, f)
+
+    @classmethod
+    def load(cls, tfidf_guesser):
+        with open(BUZZER_MODEL_PATH, 'rb') as f:
+            params = pickle.load(f)
+            guesser = BuzzerGuesser()
+            guesser.rnn_model = params['rnn_model']
+            return guesser
+
+
 class TfidfGuesser:
     '''
     This is the guesser class; here we use Tfidf.
@@ -211,16 +368,113 @@ class TfidfGuesser:
             return guesser
 
 
+# TO DO:
+class ElmoGuesser:
+
+    def __init__(self):
+        self.sentence_matrix = None
+        self.i_to_ans = None
+        self.elmo = Elmo(options_file, weight_file, 2, dropout=0)
+
+    def train(self):
+        '''
+       Must be passed the training data - list of questions from the QuizBowlDataset class
+       '''
+        questions, answers = [], []
+        for ques in training_data:
+            questions.append(ques.sentences)
+            answers.append(ques.page)
+
+        answer_docs = defaultdict(str)
+        for q, ans in zip(questions, answers):
+            text = ' '.join(q)
+            answer_docs[ans] += ' ' + text
+
+        x_array = []
+        y_array = []
+        for ans, doc in answer_docs.items():
+            x_array.append(doc)
+            y_array.append(ans)
+
+        self.i_to_ans = {i: ans for i, ans in enumerate(y_array)}
+
+        character_ids = batch_to_ids(questions)
+        embeds = elmo(character_ids)
+
+        self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)
+
+    def guess(self):
+        print('Elmo Guesser -> guess')
+
+
+    def save(self):
+        print('Elmo Guesser -> save')
+
+
+    def load(self):
+        print('Elmo Guesser -> load')
+
+
+# TO DO:
+class BertGuesser:
+    def __init__(self):
+        self.tfidf_vectorizer = None
+        self.tfidf_matrix = None
+        self.i_to_ans = None
+
+    def train(self):
+        print('Bert Guesser -> train')
+
+    def guess(self):
+        print('Bert Guesser -> guess')
+
+    def save(self):
+        print('Bert Guesser -> save')
+
+    def load(self):
+        print('Bert Guesser -> load')
+
+
 ###You don't need to change this funtion
-def get_trained_guesser_model(questions):
+def get_trained_tfidf_guesser_model(questions):
     '''
     questions is the QuizbowlDataset object's output, returned from its data() method (check out dataset_util.py)
     '''
-    print('Training the Guesser...')
+    print('Training the TFIDF Guesser...')
     tfidf_guesser = TfidfGuesser()
     tfidf_guesser.train(questions)
     print('---Guesser is Trained and Ready to be Used---')
     return tfidf_guesser
+
+
+def get_trained_elmo_guesser_model(questions):
+    '''
+    questions is the QuizbowlDataset object's output, returned from its data() method (check out dataset_util.py)
+    '''
+    print('Training the ELMO Guesser...')
+    elmo_guesser = ElmoGuesser()
+    elmo_guesser.train(questions)
+    print('---Guesser is Trained and Ready to be Used---')
+    return elmo_guesser
+
+
+def get_trained_bert_guesser_model(questions):
+    '''
+    questions is the QuizbowlDataset object's output, returned from its data() method (check out dataset_util.py)
+    '''
+    print('Training the BERT Guesser...')
+    bert_guesser = BertGuesser()
+    bert_guesser.train(questions)
+    print('---Guesser is Trained and Ready to be Used---')
+    return bert_guesser
+
+
+def get_trained_buzzer_guesser_model(questions, tfidf_model):
+    print('Training the BUZZER Guesser...')
+    buzzer_guesser = BuzzerGuesser(tfidf_model)
+    buzzer_guesser.train(questions, tfidf_model)
+    print('---Guesser is Trained and Ready to be Used---')
+    return buzzer_guesser
 
 
 ###You don't need to change this funtion
@@ -431,29 +685,6 @@ def batchify(batch):
     return q_batch
 
 
-class QuestionDataset(Dataset):
-    """
-    Pytorch data class for questions
-    """
-
-    ###You don't need to change this funtion
-    def __init__(self, examples):
-        self.questions = []
-        self.labels = []
-
-        for qq, ll in examples:
-            self.questions.append(qq)
-            self.labels.append(ll)
-
-    ###You don't need to change this funtion
-    def __getitem__(self, index):
-        return self.questions[index], self.labels[index]
-
-    ###You don't need to change this funtion
-    def __len__(self):
-        return len(self.questions)
-
-
 ###You don't need to change this funtion
 def accuracy_fn(logits, labels):
     # reshape labels to give a flat vector of length batch_size*seq_len
@@ -540,7 +771,6 @@ def train(args, model, train_data_loader, dev_data_loader, device):
         labels = batch['labels'].to(device)
 
         #### Your code here ----
-        # print('TRAIN: ', question_feature_vec)
 
         # zero out
         model.zero_grad()
@@ -602,7 +832,6 @@ def evaluate(data_loader, model, device):
         question_len = batch['len'].to(device)
         labels = batch['labels'].to(device)
 
-        # print('EVALUATE: ', question_feature_vec)
         ####Your code here ---
 
         # get the output from the model
@@ -643,9 +872,9 @@ class RNNBuzzer(nn.Module):
         # define linear layer going from hidden to output.
         self.hidden_to_label = nn.Linear(n_hidden, n_output)
 
-        # ---you can add other things like dropout between two layers, but do so in forward function below,
-        # as we have to perform an extra step on the output of LSTM before going to linear layer(s).
-        # The MODEL FOR TEST CASES is just single layer LSTM followed by 1 linear layer - do not add anything else for the purpose of passing test cases!!
+    # self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
+
+    # The MODEL FOR TEST CASES is just single layer LSTM followed by 1 linear layer - do not add anything else for the purpose of passing test cases!!
 
     def forward(self, X, X_lens):
         """
@@ -678,10 +907,9 @@ class RNNBuzzer(nn.Module):
         return logits
 
 
+# TEMP MAIN
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Options for RNN Buzzer')
-    parser.add_argument('--guesser_model_path', type=str, default='tfidf.pickle',
-                        help='path for saving the trained guesser model')
     parser.add_argument('--n_guesses', type=int, default=10,
                         help='number of top guesses to consider for creating feature vector')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch Size for the training of the buzzer')
@@ -694,8 +922,6 @@ if __name__ == "__main__":
                         help='Limit the dev data used to evaluate the buzzer (total is 1161)')
     parser.add_argument('--buzzer_test_limit', type=int, default=500,
                         help='Limit the test data used to evaluate the buzzer (total is 1953)')
-    parser.add_argument('--guesser_saved_flag', type=bool, default=False,
-                        help='flag indicating use of saved guesser model or training one')
     parser.add_argument('--buzz_data_saved_flag', type=bool, default=False,
                         help='flag indicating using saved data files to train buzzer, or generating them')
     parser.add_argument('--see_test_accuracy', type=bool, default=False,
@@ -704,90 +930,268 @@ if __name__ == "__main__":
                         help='number of characters to skip after which buzzer should predict')
     parser.add_argument('--checkpoint', type=int, default=50)
 
+    # NEW ARGUMENTS:
+    # different dataset flags
+    parser.add_argument('--trivia_qa_flag', type=bool, default=False,
+                        help='flag indicating use of TriviaQA')
+    parser.add_argument('--quizbowl_flag', type=bool, default=False,
+                        help='flag indicating use of Quizbowl')
+
+    # different saved guesser paths
+    parser.add_argument('--tfidf_guesser_model_path', type=str, default='tfidf.pickle',
+                        help='path for saving the trained tfidf guesser model')
+    parser.add_argument('--elmo_guesser_model_path', type=str, default='elmo.pickle',
+                        help='path for saving the trained elmo guesser model')
+    parser.add_argument('--bert_guesser_model_path', type=str, default='bert.pickle',
+                        help='path for saving the trained bert guesser model')
+    parser.add_argument('--buzzer_guesser_model_path', type=str, default='buzzer.pickle',
+                       help='path for saving the trained buzzer guesser model')
+
+    # different saved guesser models
+    parser.add_argument('--tfidf_guesser_saved_flag', type=bool, default=False,
+                        help='flag indicating use of saved tfidf guesser model or training one')
+    parser.add_argument('--elmo_guesser_saved_flag', type=bool, default=False,
+                        help='flag indicating use of saved elmo guesser model or training one')
+    parser.add_argument('--bert_guesser_saved_flag', type=bool, default=False,
+                        help='flag indicating use of saved bert guesser model or training one')
+
+    # different guessers models to generate
+    parser.add_argument('--tfidf_flag', type=bool, default=False,
+                        help='flag indicating use tfidf guesser')
+    parser.add_argument('--elmo_flag', type=bool, default=False,
+                        help='flag indicating use of elmo guesser')
+    parser.add_argument('--bert_flag', type=bool, default=False,
+                        help='flag indicating use of bert guesser')
+
+    # saved buzzer model
+    parser.add_argument('--buzzer_guesser_saved_flag', type=bool, default=False,
+                        help='flag indicating use of saved buzzer guesser model or training one')
+    # use codalab method
+    parser.add_argument('--cli_train', type=bool, default=False,
+                        help='flag indicating use cli command')
+
     args = parser.parse_args()
 
-    if args.guesser_train_limit < 0:
-        train_guess_questions = QuizBowlDataset(guesser=True, split='train').data()
+    if args.cli_train:
+        train()
+        # if args.buzzer_guesser_saved_flag:
+        #     buzzer_model = BuzzerGuesser().load(args.buzzer_guesser_model_path)
+        # else:
+        #     buzzer_model = get_trained_buzzer_guesser_model(guesser_model)
     else:
-        train_guess_questions = QuizBowlDataset(guesser=True, split='train').data()[:args.guesser_train_limit]
 
-    if args.buzzer_train_limit < 0:
-        train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()
-    else:
-        train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()[:args.buzzer_train_limit]
+        # Load the dataset selected
+        if args.trivia_qa_flag:
+            # TO DO: NEED TO REMOVE THE SPLIT LATER?
+            # NOTE: PREFERABLY NOT EVEN HAVE TRAIN, DEV, TEST
+            train_guess_questions = TriviaQADataset(guesser=True).data()
+            dev_buzz_questions = TriviaQADataset(buzzer=True).data()
+            test_buzz_questions = TriviaQADataset(buzzer=True).data()
+        elif args.quizbowl_flag:
+            # TO DO: NEED TO REMOVE THE SPLIT LATER AND LIMIT?
+            if args.guesser_train_limit < 0:
+                train_guess_questions = QuizBowlDataset(guesser=True, split='train').data()
+                train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()
+            else:
+                train_guess_questions = QuizBowlDataset(guesser=True, split='train').data()[:args.guesser_train_limit]
+                train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()[:args.buzzer_train_limit]
 
-    if args.buzzer_dev_limit < 0:
-        dev_buzz_questions = QuizBowlDataset(buzzer=True, split='dev').data()
-    else:
-        dev_buzz_questions = QuizBowlDataset(buzzer=True, split='dev').data()[:args.buzzer_dev_limit]
+            if args.buzzer_train_limit < 0:
+                train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()
+            else:
+                train_buzz_questions = QuizBowlDataset(buzzer=True, split='train').data()[:args.buzzer_train_limit]
 
-    if args.buzzer_test_limit < 0:
-        test_buzz_questions = QuizBowlDataset(buzzer=True, split='test').data()
-    else:
-        test_buzz_questions = QuizBowlDataset(buzzer=True, split='test').data()[:args.buzzer_test_limit]
+            if args.buzzer_dev_limit < 0:
+                dev_buzz_questions = QuizBowlDataset(buzzer=True, split='dev').data()
+            else:
+                dev_buzz_questions = QuizBowlDataset(buzzer=True, split='dev').data()[:args.buzzer_dev_limit]
 
-    if args.guesser_saved_flag:
-        guesser_model = TfidfGuesser().load(args.guesser_model_path)
-    else:
-        guesser_model = get_trained_guesser_model(train_guess_questions)
-        guesser_model.save(args.guesser_model_path)
-        print(
-            'Guesser Model Saved! Use --guesser_saved_flag=True when you next run the code to load the trained guesser directly.')
+            if args.buzzer_test_limit < 0:
+                test_buzz_questions = QuizBowlDataset(buzzer=True, split='test').data()
+            else:
+                test_buzz_questions = QuizBowlDataset(buzzer=True, split='test').data()[:args.buzzer_test_limit]
+        else:
+            print('Please select a flag to specify a database')
+            print('a) TriviaQA: --trivia_qa_flag')
+            print('b) Quizbowl: --quizbowl_flag')
 
-    if args.buzz_data_saved_flag:
-        train_exs = np.load('train_exs.npy')
-        dev_exs = np.load('dev_exs.npy')
-        test_exs = np.load('test_exs.npy')
-        dev_ques_texts = np.load('dev_ques_texts.npy')
-    else:
-        print('Generating Guesses for Training Buzzer Data')
-        train_qnums, train_answers, train_char_indices, train_ques_texts, train_ques_lens, train_guesses_and_scores = \
-            generate_guesses_and_scores(guesser_model, train_buzz_questions, args.n_guesses, char_skip=args.char_skip)
-        print('Generating Guesses for Dev Buzzer Data')
-        dev_qnums, dev_answers, dev_char_indices, dev_ques_texts, dev_ques_lens, dev_guesses_and_scores = \
-            generate_guesses_and_scores(guesser_model, dev_buzz_questions, args.n_guesses, char_skip=args.char_skip)
-        # print('DEV QUES[0]', dev_ques_texts[0])
-        print('Generating Guesses for Test Buzzer Data')
-        test_qnums, test_answers, test_char_indices, test_ques_texts, test_ques_lens, test_guesses_and_scores = \
-            generate_guesses_and_scores(guesser_model, test_buzz_questions, args.n_guesses, char_skip=args.char_skip)
-        train_exs = create_feature_vecs_and_labels(train_guesses_and_scores, train_answers, args.n_guesses)
-        # print(len(train_exs))
-        dev_exs = create_feature_vecs_and_labels(dev_guesses_and_scores, dev_answers, args.n_guesses)
-        # print(len(dev_exs))
-        test_exs = create_feature_vecs_and_labels(test_guesses_and_scores, test_answers, args.n_guesses)
-        # print(len(test_exs))
-        np.save('train_exs.npy', train_exs)
-        np.save('dev_exs.npy', dev_exs)
-        np.save('test_exs.npy', test_exs)
-        np.save('dev_ques_texts.npy', dev_ques_texts)
-        print('The Examples for Train, Dev, Test have been SAVED! Use --buzz_data_saved_flag=True next time when you \
-                run the code to use saved data and not generate guesses again.')
+        # Load the model selected
+        if args.tfidf_guesser_saved_flag:
+            guesser_model = TfidfGuesser().load(args.tfidf_guesser_model_path)
+        elif args.elmo_guesser_saved_flag:
+            guesser_model = ElmoGuesser().load(args.elmo_guesser_model_path)
+        elif args.bert_guesser_saved_flag:
+            guesser_model = BertGuesser().load(args.bert_guessesr_model_path)
+        else:
+            if args.tfidf_flag:
+                guesser_model = get_trained_tfidf_guesser_model(train_guess_questions)
+                guesser_model.save(args.tfidf_guesser_model_path)
+                print(
+                    'TFIDF Guesser Model Saved! Use --tfidf_guesser_saved_flag=True when you next run the code to load the trained guesser directly.')
+            elif args.elmo_flag:
+                guesser_model = get_trained_elmo_guesser_model(train_guess_questions)
+                guesser_model.save(args.elmo_guesser_model_path)
+                print(
+                    'ELMO Guesser Model Saved! Use --elmo_guesser_saved_flag=True when you next run the code to load the trained guesser directly.')
+            elif args.bert_flag:
+                guesser_model = get_trained_bert_guesser_model(train_guess_questions)
+                guesser_model.save(args.bert_guesser_model_path)
+                print(
+                    'BERT Guesser Model Saved! Use --bert_guesser_saved_flag=True when you next run the code to load the trained guesser directly.')
+            else:
+                print('Please either select a saved model flag or generate a specific a guesser model: ')
+                print('1a) Saved TFIDF: --tfidf_guesser_saved_flag')
+                print('1b) Saved ELMo: --elmo_guesser_saved_flag')
+                print('1c) Saved Bert: --bert_guesser_saved_flag')
+                print('2a) TFIDF: --tfidf_flag')
+                print('2b) ELMo: --elmo_flag')
+                print('2c) Bert: --bert_flag')
 
-    train_dataset = QuestionDataset(train_exs)
-    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, num_workers=0,
-                              collate_fn=batchify)
+        if args.buzz_data_saved_flag:
+            train_exs = np.load('train_exs.npy')
+            dev_exs = np.load('dev_exs.npy')
+            test_exs = np.load('test_exs.npy')
+            dev_ques_texts = np.load('dev_ques_texts.npy')
+        else:
+            print('Generating Guesses for Training Buzzer Data')
+            train_qnums, train_answers, train_char_indices, train_ques_texts, train_ques_lens, train_guesses_and_scores = \
+                generate_guesses_and_scores(guesser_model, train_buzz_questions, args.n_guesses,
+                                            char_skip=args.char_skip)
+            print('Generating Guesses for Dev Buzzer Data')
+            dev_qnums, dev_answers, dev_char_indices, dev_ques_texts, dev_ques_lens, dev_guesses_and_scores = \
+                generate_guesses_and_scores(guesser_model, dev_buzz_questions, args.n_guesses, char_skip=args.char_skip)
+            print('Generating Guesses for Test Buzzer Data')
+            test_qnums, test_answers, test_char_indices, test_ques_texts, test_ques_lens, test_guesses_and_scores = \
+                generate_guesses_and_scores(guesser_model, test_buzz_questions, args.n_guesses,
+                                            char_skip=args.char_skip)
+            train_exs = create_feature_vecs_and_labels(train_guesses_and_scores, train_answers, args.n_guesses)
+            # print(len(train_exs))
+            dev_exs = create_feature_vecs_and_labels(dev_guesses_and_scores, dev_answers, args.n_guesses)
+            # print(len(dev_exs))
+            test_exs = create_feature_vecs_and_labels(test_guesses_and_scores, test_answers, args.n_guesses)
+            # print(len(test_exs))
+            np.save('train_exs.npy', train_exs)
+            np.save('dev_exs.npy', dev_exs)
+            np.save('test_exs.npy', test_exs)
+            np.save('dev_ques_texts.npy', dev_ques_texts)
+            print('The Examples for Train, Dev, Test have been SAVED! Use --buzz_data_saved_flag=True next time when you \
+					run the code to use saved data and not generate guesses again.')
 
-    dev_dataset = QuestionDataset(dev_exs)
-    dev_sampler = torch.utils.data.sampler.SequentialSampler(dev_dataset)
-    dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, sampler=dev_sampler, num_workers=0,
-                            collate_fn=batchify)
+        train_dataset = QuestionDataset(train_exs)
+        train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, num_workers=0,
+                                  collate_fn=batchify)
 
-    test_dataset = QuestionDataset(test_exs)
-    test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, num_workers=0,
-                             collate_fn=batchify)
+        dev_dataset = QuestionDataset(dev_exs)
+        dev_sampler = torch.utils.data.sampler.SequentialSampler(dev_dataset)
+        dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, sampler=dev_sampler, num_workers=0,
+                                collate_fn=batchify)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        test_dataset = QuestionDataset(test_exs)
+        test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
+        test_loader = DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, num_workers=0,
+                                 collate_fn=batchify)
 
-    model = RNNBuzzer()
-    model.to(device)
-    print(model)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    for epoch in range(args.num_epochs):
-        print('start epoch %d' % (epoch + 1))
-        train_acc, dev_acc = train(args, model, train_loader, dev_loader, device)
+        model = RNNBuzzer()
+        model.to(device)
+        print(model)
 
-    if args.see_test_accuracy:
-        print('The Final Test Set Accuracy')
-        print(evaluate(test_loader, model, device))
+        for epoch in range(args.num_epochs):
+            print('start epoch %d' % (epoch + 1))
+            train_acc, dev_acc = train(args, model, train_loader, dev_loader, device)
+
+        if args.see_test_accuracy:
+            print('The Final Test Set Accuracy')
+            print(evaluate(test_loader, model, device))
+
+# --- CODALAB THINGS ---
+def guess_and_buzz(tfidf_guesser, buzzer_guesser, question_text) -> Tuple[str, bool]:
+    guesses = tfidf_guesser.guess([question_text], BUZZ_NUM_GUESSES)[0]
+
+    buzz_guess = buzzer_guesser.guess(tfidf_guesser, [question_text])
+    # scores = [guess[1] for guess in guesses]
+    # buzz = scores[0] / sum(scores) >= BUZZ_THRESHOLD
+
+    return guesses[0][0], buzz_guess
+
+def batch_guess_and_buzz(tfidf_guesser, buzzer_guesser, questions) -> List[Tuple[str, bool]]:
+    question_guesses = tfidf_guesser.guess(questions, BUZZ_NUM_GUESSES)
+    # question_buzzes = buzzer_guesser.guess(tfidf_guesser, [questions])
+    outputs = []
+    for guesses, question in zip(question_guesses, questions):
+        # scores = [guess[1] for guess in guesses]
+        # buzz = buzzer_guesser.guess([question_text], tfidf_guesser)
+        buzz = buzzer_guesser.guess(tfidf_guesser, [question])
+        outputs.append((guesses[0][0], buzz))
+    return outputs
+
+def create_app(enable_batch=True):
+    tfidf_guesser = TfidfGuesser.load()
+    buzzer_guesser = BuzzerGuesser.load(tfidf_guesser)
+    app = Flask(__name__)
+
+    @app.route('/api/1.0/quizbowl/act', methods=['POST'])
+    def act():
+        question = request.json['text']
+        guess, buzz = guess_and_buzz(tfidf_guesser, buzzer_guesser, question)
+        return jsonify({'guess': guess, 'buzz': True if buzz else False})
+
+    @app.route('/api/1.0/quizbowl/status', methods=['GET'])
+    def status():
+        return jsonify({
+            'batch': enable_batch,
+            'batch_size': 200,
+            'ready': True,
+            'include_wiki_paragraphs': False
+        })
+
+    @app.route('/api/1.0/quizbowl/batch_act', methods=['POST'])
+    def batch_act():
+        questions = [q['text'] for q in request.json['questions']]
+        return jsonify([
+            {'guess': guess, 'buzz': True if buzz else False}
+            for guess, buzz in batch_guess_and_buzz(tfidf_guesser, buzzer_guesser, questions)
+        ])
+    return app
+
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+@click.option('--host', default='0.0.0.0')
+@click.option('--port', default=4861)
+@click.option('--disable-batch', default=False, is_flag=True)
+def web(host, port, disable_batch):
+    """
+    Start web server wrapping tfidf model
+    """
+    app = create_app(enable_batch=not disable_batch)
+    app.run(host=host, port=port, debug=False)
+
+@cli.command()
+def train():
+    """
+    Train the tfidf model, requires downloaded data and saves to models/
+    """
+    # dataset = QuizBowlDataset(guesser=True)
+    # tfidf_guesser = TfidfGuesser()
+    #
+    # tfidf_guesser.train(dataset.data())
+    # tfidf_guesser.save()
+
+    try:
+        tfidf_guesser = TfidfGuesser.load()
+    except:
+        dataset = QuizBowlDataset(guesser=True)
+        tfidf_guesser = TfidfGuesser()
+
+        tfidf_guesser.train(dataset.data())
+        tfidf_guesser.save()
+
+    buzzer_dataset = QuizBowlDataset(buzzer=True)
+    buzzer_guesser = BuzzerGuesser()
+    buzzer_guesser.train(buzzer_dataset.data(), tfidf_guesser)
+    buzzer_guesser.save()
