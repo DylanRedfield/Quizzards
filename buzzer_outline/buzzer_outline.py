@@ -21,7 +21,10 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.nn.utils import clip_grad_norm_
 
+from spacy import Tokenizer
+
 from allennlp.modules.elmo import Elmo, batch_to_ids
+from allennlp
 options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json"
 weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
 
@@ -247,21 +250,22 @@ class ElmoGuesser:
         self.sentence_matrix = None
         self.i_to_ans = None
 	self.elmo = Elmo(options_file, weight_file, 2, dropout=0)
+        nlp = spacy.load('en')
+        self.tokenizer = Tokenizer(nlp.vocab)
+
     def train(self):
          '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
         '''
         questions, answers = [], []
         for ques in training_data:
+
+            q_tokens = self.tokenizer(ques.text)
             questions.append(ques.sentences)
             answers.append(ques.page)
 
-        answer_docs = defaultdict(str)
-        for q, ans in zip(questions, answers):
-            text = ' '.join(q)
-            answer_docs[ans] += ' ' + text
-
-        x_array = []
+        # TODO questions is now a 2-d array with the tokenization of all words for each question.
+        fddfsddfsssssssdx_array = []
         y_array = []
         for ans, doc in answer_docs.items():
             x_array.append(doc)
@@ -269,8 +273,13 @@ class ElmoGuesser:
 
         self.i_to_ans = {i: ans for i, ans in enumerate(y_array)}
 
-        character_ids = batch_to_ids(questions)
-        embeds = elmo(character_ids)
+        # Get the character ids and embeddings for each word
+
+
+        # Now with the embedding for each sentence, we want to average each of the word vectors
+        # to represent a single sentence vector
+
+
 
         self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)
        
