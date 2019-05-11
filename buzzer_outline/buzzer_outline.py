@@ -248,12 +248,8 @@ class ElmoGuesser:
         self.question_matrix = None
         self.answers = []
         self.i_to_ans = None
-        print("Start elmo")
         self.elmo = Elmo(options_file, weight_file, num_output_representations = 1)
-        print("Elmo done")
-        print("start spacy")
         nlp = spacy.load('en')
-        print("spacy done")
         self.tokenizer = Tokenizer(nlp.vocab)
 
     def train(self, training_data):
@@ -282,7 +278,7 @@ class ElmoGuesser:
         word_embeddings = elmo_output['elmo_representations'][0]
 
         print("mean")
-        # A matrix of size (questions * embed_length)
+        # A matrix of size (num_train_questions * embed_length)
         self.question_matrix = word_embeddings.mean(1)
 
         print("train done")
@@ -301,13 +297,20 @@ class ElmoGuesser:
         character_ids = batch_to_ids(tokenized)
         elmo_output = self.elmo(character_ids)
         word_embeddings = elmo_output['elmo_representations'][0]
+
+        # A matrix size (num_input_questions * embed_length)
         question_embeddings = word_embeddings.mean(1)
 
         print(question_embeddings.shape)
+
+        # Matrix multiplication to find similarities between the rows of the training and input questions
+        # into a matrix size (num_input_questions * num_train_questions)
         guess_matrix = self.question_matrix.mm(question_embeddings.t()).t()
 
-        print(guess_matrix.shape)
+        # Find the max values in each row which will corespond to the most similar training question
+        # each is a vector size (num_input_questions)
         max_values, max_indicies = guess_matrix.max(1)
+
 
         print(max_indicies)
 
@@ -315,16 +318,34 @@ class ElmoGuesser:
         guesses = []
 
         for i in range(len(questions)):
-            idxs = guess_indices[i]
-            guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
+            idx = max_indicies[i]
+            #guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
+            guesses.append([(self.answers[idx], guess_matrix[i, idx])])
 
         return guesses
 
 
-
     def save(self, path):
-        print('Elmo Guesser -> save')
+
+        with open(guesser_model_path, 'wb') as f:
+                pickle.dump({
+                        'question_matrix': self.question_matrix,
+                        'answers': self.answers
+                }, f)
+
     def load(self, path):
+        with open(guesser_model_path, 'rb') as f:
+                params = pickle.load(f)
+                guesser = ElmoGuesser()
+                guesser.question_matrix = params['question_matrix']
+                guesser.answers = params['answers']
+
+                guesser.elmo = Elmo(options_file, weight_file, num_output_representations = 1)
+                nlp = spacy.load('en')
+                guesser.tokenizer = Tokenizer(nlp.vocab)
+
+                return guesser
+
         print('Elmo Guesser -> load')
 
 # TO DO:
