@@ -133,7 +133,7 @@ class QuizBowlDataset:
 		if self.buzzer:
 			questions.extend(self.db.buzz_questions)
                         
-		return questions[:10]
+		return questions
 
 
 # TO DO:
@@ -1062,7 +1062,7 @@ if __name__ == "__main__":
 				run the code to use saved data and not generate guesses again.')
 
 	train_dataset = QuestionDataset(train_exs)
-	train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, num_samples = 10)
+	train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset)
 	train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, num_workers=0,
 							  collate_fn=batchify)
 
