@@ -127,16 +127,14 @@ class QuizBowlDataset:
 		print('QUIZBOWL Dataset')
 
 	def data(self):
-		'''
-		Returns the questions - where each question is an object of the Question class - according to the specific fold specified by the split, guesser, buzzer parameters.
-		'''
 		questions = []
 		if self.guesser:
 			questions.extend(self.db.guess_questions)
 		if self.buzzer:
 			questions.extend(self.db.buzz_questions)
+                        
+		return questions[:10]
 
-		return questions
 
 # TO DO:
 class TriviaQADataset:
@@ -264,55 +262,54 @@ class ElmoGuesser:
         Must be passed the training data - list of questions from the QuizBowlDataset class
         '''
         print("train")
+
+        # We want questions to store each question tokenized by word
+        # and answers stored as a list
         questions = []
         for ques in training_data:
-            q_tokens = self.tokenizer(ques.text)
-            questions.append(q_tokens)
+
+            tokens = self.tokenizer(' '.join(ques.sentences))
+            tokens_list = [token.text for token in tokens]
+            questions.append(tokens_list)
             self.answers.append(ques.page)
 
+        print("chars to ids")
         character_ids = batch_to_ids(questions)
-        elmo_output = elmo(character_ids)
+        print("elmo output")
+        elmo_output = self.elmo(character_ids)
 
         # index at zero because we only have a single output representation
         word_embeddings = elmo_output['elmo_representations'][0]
 
+        print("mean")
         # A matrix of size (questions * embed_length)
         self.question_matrix = word_embeddings.mean(1)
 
         print("train done")
 
-        """x_array = []
-        y_array = []
-        for ans, doc in answer_docs.items():
-            x_array.append(doc)
-            y_array.append(ans)
-
-
-        # Get the character ids and embeddings for each word
-
-
-        # Now with the embedding for each sentence, we want to average each of the word vectors
-        # to represent a single sentence vector
-
-
-
-        self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)"""
        
     def guess(self, questions: List[str], max_n_guesses: Optional[int]) -> List[List[Tuple[str, float]]]:
         # Tokenize questions, get question embedding, compare them to given
 
-        print("guess")
+        print("guess", len(questions))
         tokenized = []
         for ques in questions:
-            tokenized.append(self.tokenizer(ques))
+            tokens = self.tokenizer(ques)
+            tokens_list = [token.text for token in tokens]
+            tokenized.append(tokens_list)
 
         character_ids = batch_to_ids(tokenized)
-        word_embeddings = elmo_output('elmo_representations')[0]
+        elmo_output = self.elmo(character_ids)
+        word_embeddings = elmo_output['elmo_representations'][0]
         question_embeddings = word_embeddings.mean(1)
 
-        guess_matrix = self.question_matrix.dot(question_embeddings.T).T
+        print(question_embeddings.shape)
+        guess_matrix = self.question_matrix.mm(question_embeddings.t()).t()
 
-        guess_indices = (-guess_matrix).toarra().argsort(axis = 1)[:, 0:max_n_guesses]
+        print(guess_matrix.shape)
+        max_values, max_indicies = guess_matrix.max(1)
+
+        print(max_indicies)
 
         # So now we habe a vector for each input question and we want to find the most similar saved question
         guesses = []
@@ -325,9 +322,9 @@ class ElmoGuesser:
 
 
 
-    def save(self):
+    def save(self, path):
         print('Elmo Guesser -> save')
-    def load(self):
+    def load(self, path):
         print('Elmo Guesser -> load')
 
 # TO DO:
@@ -1044,7 +1041,7 @@ if __name__ == "__main__":
 				run the code to use saved data and not generate guesses again.')
 
 	train_dataset = QuestionDataset(train_exs)
-	train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset)
+	train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, num_samples = 10)
 	train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, num_workers=0,
 							  collate_fn=batchify)
 
