@@ -21,12 +21,12 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.nn.utils import clip_grad_norm_
 
-from spacy import Tokenizer
+from spacy.tokenizer import Tokenizer
+import spacy
 
 from allennlp.modules.elmo import Elmo, batch_to_ids
-from allennlp
-options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json"
-weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
+options_file = "options_file.json"
+weight_file = "weights_file.json"
 
 
 # --- QUIZBOWL DATASET UTILITY FUNCTIONS - Do NOT Edit ---
@@ -91,7 +91,7 @@ class QantaDatabase:
 		'''
 		split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
 		'''
-		dataset_path = os.path.join('..', 'qanta.' + split + '.json')
+		dataset_path = os.path.join('../..', 'qanta.' + split + '.json')
 		with open(dataset_path) as f:
 			self.dataset = json.load(f)
 
@@ -247,31 +247,46 @@ class TfidfGuesser:
 class ElmoGuesser:
 
     def __init__(self):
-        self.sentence_matrix = None
+        self.question_matrix = None
+        self.answers = []
         self.i_to_ans = None
-	self.elmo = Elmo(options_file, weight_file, 2, dropout=0)
+        print("Start elmo")
+        self.elmo = Elmo(options_file, weight_file, num_output_representations = 1)
+        print("Elmo done")
+        print("start spacy")
         nlp = spacy.load('en')
+        print("spacy done")
         self.tokenizer = Tokenizer(nlp.vocab)
 
-    def train(self):
-         '''
+    def train(self, training_data):
+
+        '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
         '''
-        questions, answers = [], []
+        print("train")
+        questions = []
         for ques in training_data:
-
             q_tokens = self.tokenizer(ques.text)
-            questions.append(ques.sentences)
-            answers.append(ques.page)
+            questions.append(q_tokens)
+            self.answers.append(ques.page)
 
-        # TODO questions is now a 2-d array with the tokenization of all words for each question.
-        fddfsddfsssssssdx_array = []
+        character_ids = batch_to_ids(questions)
+        elmo_output = elmo(character_ids)
+
+        # index at zero because we only have a single output representation
+        word_embeddings = elmo_output['elmo_representations'][0]
+
+        # A matrix of size (questions * embed_length)
+        self.question_matrix = word_embeddings.mean(1)
+
+        print("train done")
+
+        """x_array = []
         y_array = []
         for ans, doc in answer_docs.items():
             x_array.append(doc)
             y_array.append(ans)
 
-        self.i_to_ans = {i: ans for i, ans in enumerate(y_array)}
 
         # Get the character ids and embeddings for each word
 
@@ -281,10 +296,35 @@ class ElmoGuesser:
 
 
 
-        self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)
+        self.tfidf_matrix = self.tfidf_vectorizer.transform(x_array)"""
        
-    def guess(self):
-        print('Elmo Guesser -> guess')
+    def guess(self, questions: List[str], max_n_guesses: Optional[int]) -> List[List[Tuple[str, float]]]:
+        # Tokenize questions, get question embedding, compare them to given
+
+        print("guess")
+        tokenized = []
+        for ques in questions:
+            tokenized.append(self.tokenizer(ques))
+
+        character_ids = batch_to_ids(tokenized)
+        word_embeddings = elmo_output('elmo_representations')[0]
+        question_embeddings = word_embeddings.mean(1)
+
+        guess_matrix = self.question_matrix.dot(question_embeddings.T).T
+
+        guess_indices = (-guess_matrix).toarra().argsort(axis = 1)[:, 0:max_n_guesses]
+
+        # So now we habe a vector for each input question and we want to find the most similar saved question
+        guesses = []
+
+        for i in range(len(questions)):
+            idxs = guess_indices[i]
+            guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
+
+        return guesses
+
+
+
     def save(self):
         print('Elmo Guesser -> save')
     def load(self):
@@ -314,7 +354,7 @@ def get_trained_tfidf_guesser_model(questions):
 	'''
 	questions is the QuizbowlDataset object's output, returned from its data() method (check out dataset_util.py)
 	'''
-	print('Training the Guesser...')
+	print('Training the TF-idf Guesser...')
 	tfidf_guesser = TfidfGuesser()
 	tfidf_guesser.train(questions)
 	print('---Guesser is Trained and Ready to be Used---')
@@ -324,7 +364,7 @@ def get_trained_elmo_guesser_model(questions):
 	'''
 	questions is the QuizbowlDataset object's output, returned from its data() method (check out dataset_util.py)
 	'''
-	print('Training the Guesser...')
+	print('Training elmo the Guesser...')
 	elmo_guesser = ElmoGuesser()
 	elmo_guesser.train(questions)
 	print('---Guesser is Trained and Ready to be Used---')
