@@ -47,6 +47,8 @@ DEV_FOLDS = {GUESSER_DEV_FOLD, BUZZER_DEV_FOLD}
 GUESSER_TEST_FOLD = 'guesstest'
 BUZZER_TEST_FOLD = 'buzztest'
 
+DS_VERSION = '2018.04.18'
+
 class Question(NamedTuple):
     qanta_id: int
     text: str
@@ -103,6 +105,7 @@ class Question(NamedTuple):
 
 class QantaDatabase:
     def __init__(self, dataset_path=os.path.join('data', util.QANTA_MAPPED_DATASET_PATH)):
+    # def __init__(self, dataset_path=os.path.join('../../data', f'qanta.mapped.{DS_VERSION}.json')):
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
@@ -153,8 +156,6 @@ class QuizBowlDataset:
             questions.extend(self.db.buzz_train_questions)
 
         return questions
-
-
 
 class QuestionDataset(Dataset):
     """
@@ -207,10 +208,11 @@ class RNNBuzzer(nn.Module):
         # as we have to perform an extra step on the output of LSTM before going to linear layer(s).
         # The MODEL FOR TEST CASES is just single layer LSTM followed by 1 linear layer - do not add anything else for the purpose of passing test cases!!
 
-    def forward(self, X, X_lens):
+    def forward(self, X):
         # get the batch size and sequence length (max length of the batch)
         # dim of X: batch_size x batch_max_len x input feature vec dim
-        batch_size, seq_len, _ = X.size()
+        # batch_size, seq_len, _ = X.size()
+        print('X.size()', X.size())
 
         ###Your code here --
         # Get the output of LSTM - (output dim: batch_size x batch_max_len x lstm_hidden_dim)
@@ -308,7 +310,41 @@ def create_feature_vecs_and_labels(guesses_and_scores, answers, n_guesses):
 
         xs.append(np.array(prob_vec))
 
+    # print('xs: ', xs)
+    # print('ys: ', ys)
+
     exs = list(zip(xs, ys))
+    return exs
+
+def create_feature_vecs_and_labels_altered(guesses_and_scores, answers, n_guesses):
+    xs, ys = [], []
+
+    print('guesses_and_scores: ', guesses_and_scores)
+    for i in range(len(answers)):
+        guesses_scores = guesses_and_scores[i]
+        ans = answers[i]
+        length = len(ans)
+        labels = []
+        prob_vec = []
+
+        for j in range(length):
+            ## YOUR CODE BELOW
+            temp_prob = []
+            for k in range(n_guesses):
+                temp_prob.append(guesses_scores[j][k][1])
+            if ans[j] == guesses_scores[j][0][0]:
+                labels.append(1)
+            else:
+                labels.append(0)
+            prob_vec.append(temp_prob)
+
+        xs.append(np.array(prob_vec))
+
+    # print('xs: ', xs)
+    # print('ys: ', ys)
+
+    # print('xs: ', xs)
+    exs = list(xs)
     return exs
 
 def create_quess(text):
@@ -385,7 +421,9 @@ def generate_guesses_and_scores(model, questions, max_guesses, char_skip=50):
 
         # store guesses for the flattened questions
         # print('q_texts_flattened')
+        print('q_texts_flattened: ', q_texts_flattened)
         flattened_guesses_scores = model.guess(q_texts_flattened, max_guesses)
+        print('flattened_guesses_scores: ', flattened_guesses_scores)
 
         # de-flatten using question lengths, and add guesses and scores
         # (now corresponding to one question at a time) to the main list
@@ -403,7 +441,10 @@ def generate_guesses_and_scores(model, questions, max_guesses, char_skip=50):
 
 def guess_and_buzz(tfidf_guesser, buzzer_guesser, question_text) -> Tuple[str, bool]:
     print('GUESS AND BUZZ RAN')
+    print('questiion_text: ', question_text)
     guesses = tfidf_guesser.guess([question_text], BUZZ_NUM_GUESSES)[0]
+
+    print('GUESSES: ', guesses)
 
     buzz_guess = buzzer_guesser.guess(tfidf_guesser, [question_text])
     # scores = [guess[1] for guess in guesses]
@@ -482,37 +523,61 @@ class BuzzerGuesser:
 
     def guess(self, tfidf_guesser, questions: List[str]) -> List[List[Tuple[str, float]]]:
         char_skip = 50
-        n_guesses = 5
+        n_guesses = 10
         batch_size = 8
 
+        print('guess-questions', type(questions))
         test_qnums, test_answers, test_char_indices, test_ques_texts, test_ques_lens, test_guesses_and_scores = \
             generate_guesses_and_scores(tfidf_guesser, questions, n_guesses, char_skip)
 
-        test_exs = create_feature_vecs_and_labels(test_guesses_and_scores, test_answers, n_guesses)
+        # print('TEST ANSWERS: ', test_answers)
+
+        test_exs = create_feature_vecs_and_labels_altered(test_guesses_and_scores, test_answers, n_guesses)
+        # print('TEST_EXS 1 : ', test_exs)
 
         # test_dataset = QuestionDataset(test_exs)
 
-        test_dataset = QuestionDataset(test_exs)
-        test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, num_workers=0,
-                                 collate_fn=batchify)
+        # test_dataset = QuestionDataset(test_exs)
+        # test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
+        # test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, num_workers=0,
+        #                          collate_fn=batchify)
 
         # test_exs = torch.FloatTensor(test_dataset.questions)
         # test_exs = torch.FloatTensor(test_exs)
         self.rnn_model.eval()
-        for idx, batch in enumerate(test_loader):
-            question_feature_vec = batch['feature_vec']
-            question_len = batch['len']
+        # print('TYPE: test_exs: ', type(test_exs))
+        # print('TEST_EXS: ', test_exs)
+
+        temp_ex = np.asarray(test_exs)
+        # print('TYPE: temp_exs: ', type(temp_ex))
+        # print('SHAPE: ', temp_ex.shape)
+        # test_exs = torch.FloatTensor(test_exs)
+        test_exs = torch.from_numpy(temp_ex)
+        # print('TYPE: test_exs: ', type(test_exs))
+        # print('SIZE: test_exs: ', type(test_exs.size()))
+        # print('TYPE: test_exs: ', type(test_exs.float()))
+        test_exs = test_exs.float()
 
 
-            logits = self.rnn_model(question_feature_vec, question_len)
+        # for idx, batch in enumerate(test_loader):
+        #     question_feature_vec = batch['feature_vec']
+        #     question_len = batch['len']
 
-            (first, second) = logits
 
-            if first > second:
-                return False
-            else:
-                return True
+        logits = self.rnn_model(test_exs)
+        print('LOGITS: ', logits)
+        # logits = torch.sum(logits, dim=0)
+
+        (first, second) = logits[0]
+
+
+
+        if first > second:
+            print('FIRST: ', first)
+            return False
+        else:
+            print('SECOND: ', second)
+            return True
 
         # logits = self.rnn_model(test_exs, len(test_exs))
 
@@ -597,7 +662,7 @@ class TfidfGuesser:
         for i in range(len(questions)):
             idxs = guess_indices[i]
             guesses.append([(self.i_to_ans[j], guess_matrix[i, j]) for j in idxs])
-
+        print('GUESS: ', guesses[0][0])
         return guesses
 
     def save(self):
@@ -675,6 +740,7 @@ def train():
 
     try:
         tfidf_guesser = TfidfGuesser.load()
+        print('TFIDF GUESSER LOADED')
     except:
         dataset = QuizBowlDataset(guesser=True)
         tfidf_guesser = TfidfGuesser()
@@ -682,10 +748,26 @@ def train():
         tfidf_guesser.train(dataset.data())
         tfidf_guesser.save()
 
-    buzzer_dataset = QuizBowlDataset(buzzer=True)
-    buzzer_guesser = BuzzerGuesser()
-    buzzer_guesser.train(buzzer_dataset.data(), tfidf_guesser)
-    buzzer_guesser.save()
+    try:
+        buzzer_guesser = BuzzerGuesser.load(tfidf_guesser)
+        print('BUZZER GUESSER LOADED')
+    except:
+        buzzer_dataset = QuizBowlDataset(buzzer=True)
+        buzzer_guesser = BuzzerGuesser()
+        buzzer_guesser.train(buzzer_dataset.data(), tfidf_guesser)
+        buzzer_guesser.save()
+
+    # question = request.json['text']
+    # guess, buzz = guess_and_buzz(tfidf_guesser, buzzer_guesser, question)
+    # return jsonify({'guess': guess, 'buzz': True if buzz else False})
+
+    question = "A lapse function and a shift vector field are used in a numerical approach to solving these equations called the ADM formalism. The linearized form of these equations is in terms of the d'Alembertian (dal-ahm-BARE-shin) of a tensor often represented with an \"h\" that satisfies the harmonic coordinate condition. In geometrized units, this equation is \"big-G-sub-mu-nu plus lambda little-g-sub-mu-nu equals 8-pi-T-sub-mu-nu.\" This set of ten nonlinear, partial differential equations is often presented as a tensor equation. This equation's namesake called one of its terms, the cosmological constant, the biggest blunder of his life, but now astrophysicists interpret that term of these equations as dark energy. For 10 points, name these eponymous equations used to describe the interaction of energy and spacetime curvature in general relativity."
+    guess_and_buzz(tfidf_guesser, buzzer_guesser, question)
+
+    # buzzer_dataset = QuizBowlDataset(buzzer=True)
+    # buzzer_guesser = BuzzerGuesser()
+    # buzzer_guesser.train(buzzer_dataset.data(), tfidf_guesser)
+    # buzzer_guesser.save()
 
 @cli.command()
 @click.option('--local-qanta-prefix', default='data/')
