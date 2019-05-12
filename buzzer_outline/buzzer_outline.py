@@ -133,7 +133,7 @@ class QuizBowlDataset:
 		if self.buzzer:
 			questions.extend(self.db.buzz_questions)
                         
-		return questions
+		return questions[:10]
 
 
 # TO DO:
@@ -301,7 +301,6 @@ class ElmoGuesser:
         # A matrix size (num_input_questions * embed_length)
         question_embeddings = word_embeddings.mean(1)
 
-        print(question_embeddings.shape)
 
         # Matrix multiplication to find similarities between the rows of the training and input questions
         # into a matrix size (num_input_questions * num_train_questions)
@@ -309,32 +308,33 @@ class ElmoGuesser:
 
         # Find the max values in each row which will corespond to the most similar training question
         # each is a vector size (num_input_questions)
-        max_values, max_indicies = guess_matrix.max(1)
+        max_values, max_indicies = guess_matrix.topk(max_n_guesses, 1)
 
-
-        print(max_indicies)
 
         # So now we habe a vector for each input question and we want to find the most similar saved question
         guesses = []
 
         for i in range(len(questions)):
-            idx = max_indicies[i]
-            #guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
-            guesses.append([(self.answers[idx], guess_matrix[i, idx])])
+            row = []
+            for j in range(len(max_indicies[i])):
+                idx = max_indicies[i][j]
+                #guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
+                row.append([(self.answers[idx], max_values[i, j].item())])
+            guesses.append(row)
 
         return guesses
 
 
     def save(self, path):
 
-        with open(guesser_model_path, 'wb') as f:
+        with open(path, 'wb') as f:
                 pickle.dump({
                         'question_matrix': self.question_matrix,
                         'answers': self.answers
                 }, f)
 
     def load(self, path):
-        with open(guesser_model_path, 'rb') as f:
+        with open(path, 'rb') as f:
                 params = pickle.load(f)
                 guesser = ElmoGuesser()
                 guesser.question_matrix = params['question_matrix']
