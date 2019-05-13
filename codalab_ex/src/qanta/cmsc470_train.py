@@ -8,7 +8,7 @@ from allennlp.modules.elmo import Elmo, batch_to_ids
 options_file = "options_file.json"
 weight_file = "weights_file.json"
 import json
-
+import torch
 
 class Question(NamedTuple):
     qanta_id: int
@@ -125,7 +125,7 @@ class ElmoGuesser:
         nlp = spacy.load('en')
         self.tokenizer = Tokenizer(nlp.vocab)
 
-    def train(self, training_data):
+    def train(self, training_data, device):
 
         '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
@@ -217,15 +217,17 @@ class ElmoGuesser:
         print('Elmo Guesser -> load')
 
 
-def train():
+def train(device):
     """
     Train the tfidf model, requires downloaded data and saves to models/
     """
     dataset = QuizBowlDataset(guesser=True)
     elmo_guesser = ElmoGuesser()
-    elmo_guesser.train(dataset.training_data())
+    elmo_guesser.to(device)
+    elmo_guesser.train(dataset.training_data(), device)
     elmo_guesser.save()
 
 
 if __name__ == '__main__':
-    train()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    train(device)
