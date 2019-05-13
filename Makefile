@@ -1,11 +1,9 @@
-# used to be necessary before we understood ELMo
-#elmo_weights.hdf5 elmo_options.json:
-#	wget https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5
-#	mv elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5 elmo_weights.hdf5
-#	wget https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json
-#	mv elmo_2x4096_512_2048cnn_2xhighway_options.json elmo_options.json
+weights_file.json options_file.json squad.train.json qanta.train.json qanta.test.json qanta.dev.json:
+	wget https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5
+	mv elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5 weights_file.json
+	wget https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json
+	mv elmo_2x4096_512_2048cnn_2xhighway_options.json options_file.json
 
-squad.train.json qanta.train.json qanta.test.json qanta.dev.json::
 	wget https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v2.0.json
 	mv train-v2.0.json squad.train.json
 
