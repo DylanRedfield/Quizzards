@@ -6,7 +6,7 @@ import os
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
 options_file = "options_file.json"
-weight_file = "weight_file.json"
+weight_file = "weights_file.json"
 import json
 import torch
 
