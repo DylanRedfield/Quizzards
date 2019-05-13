@@ -6,7 +6,7 @@ import os
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
 options_file = "options_file.json"
-weight_file = "weights_file.json"
+weight_file = "weight_file.json"
 import json
 import torch
 
@@ -70,7 +70,7 @@ class QantaDatabase:
         '''
         split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
         '''
-        dataset_path = os.path.join('../../../..', 'qanta.' + split + '.json')
+        dataset_path = os.path.join('../../../', 'qanta.' + split + '.json')
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
@@ -103,8 +103,6 @@ class QuizBowlDataset:
         self.guesser = guesser
         self.buzzer = buzzer
 
-        print('QUIZBOWL Dataset')
-
     def data(self):
         questions = []
         if self.guesser:
@@ -125,7 +123,7 @@ class ElmoGuesser:
         nlp = spacy.load('en')
         self.tokenizer = Tokenizer(nlp.vocab)
 
-    def train(self, training_data, device):
+    def train(self, training_data):
 
         '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
@@ -223,8 +221,7 @@ def train(device):
     """
     dataset = QuizBowlDataset(guesser=True)
     elmo_guesser = ElmoGuesser()
-    elmo_guesser.to(device)
-    elmo_guesser.train(dataset.training_data(), device)
+    elmo_guesser.train(dataset.data())
     elmo_guesser.save()
 
 
