@@ -1,5 +1,6 @@
-from spacy.tokenizer import Tokenizer
 import spacy
+from spacy.tokenizer import Tokenizer
+
 import pickle
 from typing import List, Dict, Iterable, Optional, Tuple, NamedTuple
 import os
@@ -70,7 +71,7 @@ class QantaDatabase:
         '''
         split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
         '''
-        dataset_path = os.path.join('../../../', 'qanta.' + split + '.json')
+        dataset_path = os.path.join('../../', 'qanta.' + split + '.json')
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
