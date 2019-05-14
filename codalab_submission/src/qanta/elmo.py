@@ -16,7 +16,7 @@ class ElmoGuesser:
         nlp = spacy.load('en')
         self.tokenizer = Tokenizer(nlp.vocab)
 
-    def train(self, training_data):
+    def train(self, training_data, device):
 
         '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
