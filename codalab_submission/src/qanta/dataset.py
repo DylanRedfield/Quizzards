@@ -59,14 +59,15 @@ class Question(NamedTuple):
 
     def runs(self, char_skip: int) -> Tuple[List[str], List[int]]:
         """
-        A Very Useful Function, especially for buzzer training.
         Returns runs of the question based on skipping char_skip characters at a time. Also returns the indices used
+
         q: name this first united states president.
         runs with char_skip=10:
         ['name this ',
          'name this first unit',
          'name this first united state p',
          'name this first united state president.']
+
         :param char_skip: Number of characters to skip each time
         """
         char_indices = list(range(char_skip, len(self.text) + char_skip, char_skip))

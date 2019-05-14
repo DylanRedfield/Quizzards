@@ -1,0 +1,14 @@
+name: base
+dependencies:
+  - pytorch=0.4.1
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - nltk
+  - requests
+  - click
+  - flask
+channels:
+  - anaconda
+  - pytorch
