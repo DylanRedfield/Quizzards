@@ -1,18 +1,16 @@
+from config import *
 import spacy
 from spacy.tokenizer import Tokenizer
 from allennlp.modules.elmo import Elmo, batch_to_ids
 from typing import List, Dict, Iterable, Optional, Tuple
 import pickle
 
-options_file = "data/options_file.json"
-weight_file = "data/weights_file.json"
-
 class ElmoGuesser:
     def __init__(self):
         self.question_matrix = None
         self.answers = []
         self.i_to_ans = None
-        self.elmo = Elmo(options_file, weight_file, num_output_representations=1)
+        self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
         nlp = spacy.load('en')
         self.tokenizer = Tokenizer(nlp.vocab)
 
