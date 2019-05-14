@@ -1,7 +1,7 @@
 import spacy
 from spacy.tokenizer import Tokenizer
 from allennlp.modules.elmo import Elmo, batch_to_ids
-from typing import List, Dict, Iterable, Optional, Tuple, NamedTuple
+from typing import List, Dict, Iterable, Optional, Tuple
 import pickle
 
 options_file = "data/options_file.json"
@@ -21,7 +21,7 @@ class ElmoGuesser:
         '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
         '''
-        print("train")
+        print("Training Elmo")
 
         # We want questions to store each question tokenized by word
         # and answers stored as a list

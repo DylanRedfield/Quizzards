@@ -1,11 +1,35 @@
+import elmo
+import train as training
+import util
+from config import *
+from typing import List, Dict, Iterable, Optional, Tuple
+from flask import Flask, jsonify, request
+
+
+def guess_and_buzz(model, question_text) -> Tuple[str, bool]:
+    guesses = model.guess([question_text], BUZZ_NUM_GUESSES)[0]
+    scores = [guess[1] for guess in guesses]
+    buzz = scores[0] / sum(scores) >= BUZZ_THRESHOLD
+    return guesses[0][0], buzz
+
+def batch_guess_and_buzz(model, questions) -> List[Tuple[str, bool]]:
+    question_guesses = model.guess(questions, BUZZ_NUM_GUESSES)
+    outputs = []
+    for guesses in question_guesses:
+        scores = [guess[1] for guess in guesses]
+        buzz = scores[0] / sum(scores) >= BUZZ_THRESHOLD
+        outputs.append((guesses[0][0], buzz))
+    return outputs
+
 def create_app(enable_batch=True):
-    tfidf_guesser = ElmoGuesser.load()
+    elmo_guesser = elmo.ElmoGuesser()
+    elmo_guesser.load()
     app = Flask(__name__)
 
     @app.route('/api/1.0/quizbowl/act', methods=['POST'])
     def act():
         question = request.json['text']
-        guess, buzz = guess_and_buzz(tfidf_guesser, question)
+        guess, buzz = guess_and_buzz(elmo_guesser, question)
         return jsonify({'guess': guess, 'buzz': True if buzz else False})
 
     @app.route('/api/1.0/quizbowl/status', methods=['GET'])
@@ -22,12 +46,9 @@ def create_app(enable_batch=True):
         questions = [q['text'] for q in request.json['questions']]
         return jsonify([
             {'guess': guess, 'buzz': True if buzz else False}
-            for guess, buzz in batch_guess_and_buzz(tfidf_guesser, questions)
+            for guess, buzz in batch_guess_and_buzz(elmo_guesser, questions)
         ])
-
-
     return app
-
 
 @click.group()
 def cli():
@@ -45,7 +66,15 @@ def web(host, port, disable_batch):
     app = create_app(enable_batch=not disable_batch)
     app.run(host=host, port=port, debug=False)
 
-
+@cli.command()
+def train():
+    """
+    Train the tfidf model, requires downloaded data and saves to models/
+    """
+    if TRAIN_TYPE == 'elmo':
+        training.elmo_train()
+    else:
+        print('Configure TRAIN_TYPE in config.py')
 
 @cli.command()
 @click.option('--local-qanta-prefix', default='data/')
