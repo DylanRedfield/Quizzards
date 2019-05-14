@@ -30,7 +30,7 @@ def elmo_train(device):
 
     data_set: specified data from either QANTA, SQUAD, TRIVIAQA or a mix
     """
-    data = guess_data(guesser=True)
+    data = guess_data()
     elmo_guesser = elmo.ElmoGuesser()
     elmo_guesser.train(data, device)
     elmo_guesser.save()
@@ -49,10 +49,12 @@ def buzz_rnn_train(device):
 if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if TRAIN_TYPE == 'elmo':
+        print('Starting Training Elmo')
         elmo_train(device)
     else:
         print('Configure TRAIN_TYPE in config.py')
     if BUZZ_TYPE == 'rnn':
+        print('Started Training RNNBuzzer')
         buzz_rnn_train(device)
 
     print('--TRAINING COMPLETE--')
