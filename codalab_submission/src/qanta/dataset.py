@@ -1,21 +1,20 @@
 from typing import List, Dict, Iterable, Optional, Tuple, NamedTuple
 import os
 import json
+import util
 
-from qanta.util import QANTA_MAPPED_DATASET_PATH
-
-GUESSER_TRAIN_FOLD = 'guesstrain'
-BUZZER_TRAIN_FOLD = 'buzztrain'
-TRAIN_FOLDS = {GUESSER_TRAIN_FOLD, BUZZER_TRAIN_FOLD}
+# GUESSER_TRAIN_FOLD = 'guesstrain'
+# BUZZER_TRAIN_FOLD = 'buzztrain'
+# TRAIN_FOLDS = {GUESSER_TRAIN_FOLD, BUZZER_TRAIN_FOLD}
 
 # Guesser and buzzers produce reports on these for cross validation
-GUESSER_DEV_FOLD = 'guessdev'
-BUZZER_DEV_FOLD = 'buzzdev'
-DEV_FOLDS = {GUESSER_DEV_FOLD, BUZZER_DEV_FOLD}
+# GUESSER_DEV_FOLD = 'guessdev'
+# BUZZER_DEV_FOLD = 'buzzdev'
+# DEV_FOLDS = {GUESSER_DEV_FOLD, BUZZER_DEV_FOLD}
 
 # System-wide cross validation and testing
-GUESSER_TEST_FOLD = 'guesstest'
-BUZZER_TEST_FOLD = 'buzztest'
+# GUESSER_TEST_FOLD = 'guesstest'
+# BUZZER_TEST_FOLD = 'buzztest'
 
 
 class Question(NamedTuple):
@@ -73,9 +72,13 @@ class Question(NamedTuple):
         char_indices = list(range(char_skip, len(self.text) + char_skip, char_skip))
         return [self.text[:i] for i in char_indices], char_indices
 
-
 class QantaDatabase:
-    def __init__(self, dataset_path=os.path.join('data', QANTA_MAPPED_DATASET_PATH)):
+    def __init__(self, split):
+        '''
+        split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
+        '''
+        dataset_path = os.path.join('data', 'qanta.' + split + '.json')
+        # os.path.join('../data/', 'qanta.' + split + '.json')
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
@@ -84,84 +87,34 @@ class QantaDatabase:
         self.all_questions = [Question(**q) for q in self.raw_questions]
         self.mapped_questions = [q for q in self.all_questions if q.page is not None]
 
-        self.train_questions = [q for q in self.mapped_questions if q.fold in TRAIN_FOLDS]
-        self.guess_train_questions = [q for q in self.train_questions if q.fold == GUESSER_TRAIN_FOLD]
-        self.buzz_train_questions = [q for q in self.train_questions if q.fold == BUZZER_TRAIN_FOLD]
-
-        self.dev_questions = [q for q in self.mapped_questions if q.fold in DEV_FOLDS]
-        self.guess_dev_questions = [q for q in self.dev_questions if q.fold == GUESSER_DEV_FOLD]
-        self.buzz_dev_questions = [q for q in self.dev_questions if q.fold == BUZZER_DEV_FOLD]
-
-        self.buzz_test_questions = [q for q in self.mapped_questions if q.fold == BUZZER_TEST_FOLD]
-        self.guess_test_questions = [q for q in self.mapped_questions if q.fold == GUESSER_TEST_FOLD]
-
-    def by_fold(self):
-        return {
-            GUESSER_TRAIN_FOLD: self.guess_train_questions,
-            GUESSER_DEV_FOLD: self.guess_dev_questions,
-            BUZZER_TRAIN_FOLD: self.buzz_train_questions,
-            BUZZER_DEV_FOLD: self.buzz_dev_questions,
-            BUZZER_TEST_FOLD: self.buzz_test_questions,
-            GUESSER_TEST_FOLD: self.guess_test_questions
-        }
-
+        self.guess_questions = [q for q in self.mapped_questions if q.fold == 'guess' + split]
+        self.buzz_questions = [q for q in self.mapped_questions if q.fold == 'buzz' + split]
 
 class QuizBowlDataset:
-    def __init__(self, *, guesser_train=False, buzzer_train=False):
+    def __init__(self, *, guesser=False, buzzer=False, split='train'):
         """
         Initialize a new quiz bowl data set
+        guesser = True/False -> to use data from the guesser fold or not
+        buzzer = True/False -> to use data from the buzzer fold or not
+        split can be {'train', 'dev', 'test'}
+        Together, these three parameters (two bools and one str) specify which specific fold's data to return - 'guesstrain'/'buzztrain'/'guessdev'/'buzzdev'/'guesstest'/'buzztest'
         """
         super().__init__()
-        if not guesser_train and not buzzer_train:
+        if not guesser and not buzzer:
             raise ValueError('Requesting a dataset which produces neither guesser or buzzer training data is invalid')
 
-        if guesser_train and buzzer_train:
+        if guesser and buzzer:
             print('Using QuizBowlDataset with guesser and buzzer training data, make sure you know what you are doing!')
 
-        self.db = QantaDatabase()
-        self.guesser_train = guesser_train
-        self.buzzer_train = buzzer_train
-
-    def training_data(self):
-        training_examples = []
-        training_pages = []
-        questions = []
-        if self.guesser_train:
-            questions.extend(self.db.guess_train_questions)
-        if self.buzzer_train:
-            questions.extend(self.db.buzz_train_questions)
-
-        for q in questions:
-            training_examples.append(q.sentences)
-            training_pages.append(q.page)
-
-        return training_examples, training_pages, None
+        self.db = QantaDatabase(split)
+        self.guesser = guesser
+        self.buzzer = buzzer
 
     def data(self):
-        '''
-        Returns the questions - where each question is an object of the Question class - according to the specific fold specified by the split, guesser, buzzer parameters.
-        '''
         questions = []
-        if self.guesser_train:
-            questions.extend(self.db.guess_train_questions)
-        if self.buzzer_train:
-            questions.extend(self.db.buzz_train_questions)
+        if self.guesser:
+            questions.extend(self.db.guess_questions)
+        if self.buzzer:
+            questions.extend(self.db.buzz_questions)
 
-        return questions
-
-    def questions_by_fold(self):
-        return {
-            GUESSER_TRAIN_FOLD: self.db.guess_train_questions,
-            GUESSER_DEV_FOLD: self.db.guess_dev_questions,
-            BUZZER_TRAIN_FOLD: self.db.buzz_train_questions,
-            BUZZER_DEV_FOLD: self.db.buzz_dev_questions,
-            BUZZER_TEST_FOLD: self.db.buzz_test_questions,
-            GUESSER_TEST_FOLD: self.db.guess_test_questions
-        }
-
-    def questions_in_folds(self, folds):
-        by_fold = self.questions_by_fold()
-        questions = []
-        for fold in folds:
-            questions.extend(by_fold[fold])
         return questions
