@@ -1,4 +1,10 @@
-import rnn
+# Standard library imports
+# Third party imports
+# Local application imports
+try:
+    import rnn
+except:
+    from . import rnn
 
 class RNNBuzzer:
     # TODO: Emily - Insert all the code that belongs here and debug

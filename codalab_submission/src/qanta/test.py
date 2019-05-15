@@ -1,10 +1,31 @@
-import elmo
-import train as training
-import guess as guessing
-import util
-from config import *
+# Standard library imports
+# Third party imports
 from flask import Flask, jsonify, request
 import torch
+# Local application imports
+try:
+    import elmo
+except:
+    from . import elmo
+try:
+    import train as training
+except:
+    from . import train as training
+try:
+    import guess as guessing
+except:
+    from . import guess as guessing
+try:
+    import util
+except:
+    from . import util
+try:
+    from config import *
+except:
+    from .config import *
+
+
+
 
 '''
 Test.py

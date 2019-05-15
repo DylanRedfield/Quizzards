@@ -1,16 +1,25 @@
-from config import *
+# Standard library imports
+from typing import List, Dict, Iterable, Optional, Tuple
+# Third party imports
 import spacy
 from spacy.tokenizer import Tokenizer
 from allennlp.modules.elmo import Elmo, batch_to_ids
-from typing import List, Dict, Iterable, Optional, Tuple
 import pickle
+# Local application imports
+try:
+    from config import *
+except:
+    from .config import *
 
 class ElmoGuesser:
     def __init__(self):
         self.question_matrix = None
         self.answers = []
         self.i_to_ans = None
-        self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
+        try:
+            self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
+        except:
+            self.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
         nlp = spacy.load('en')
         self.tokenizer = Tokenizer(nlp.vocab)
 
@@ -97,7 +106,10 @@ class ElmoGuesser:
             guesser.question_matrix = params['question_matrix']
             guesser.answers = params['answers']
 
-            guesser.elmo = Elmo(options_file, weight_file, num_output_representations=1)
+            try:
+                guesser.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
+            except:
+                guesser.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
             nlp = spacy.load('en')
             guesser.tokenizer = Tokenizer(nlp.vocab)
 

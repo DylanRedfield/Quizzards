@@ -1,5 +1,10 @@
+# Standard library imports
+# Third party imports
 import torch
 from torch import nn
+# Local application imports
+
+
 
 class RNNBuzzer(nn.Module):
     """High level model that handles intializing the underlying network

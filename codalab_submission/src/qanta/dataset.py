@@ -1,7 +1,13 @@
+# Standard library imports
+import json
 from typing import List, Dict, Iterable, Optional, Tuple, NamedTuple
 import os
-import json
-import util
+# Third party imports
+# Local application imports
+try:
+    import util
+except:
+    from . import util
 
 # GUESSER_TRAIN_FOLD = 'guesstrain'
 # BUZZER_TRAIN_FOLD = 'buzztrain'

@@ -1,8 +1,25 @@
+# Standard library imports
 import torch
-import elmo
-import buzzer_rnn
-import dataset as data_set
-from config import *
+# Third party imports
+
+# Local application imports
+# TODO: Could condense below, but to make sure it definitely works
+try:
+    import elmo
+except:
+    from . import elmo
+try:
+    import buzzer_rnn
+except:
+    from . import buzzer_rnn
+try:
+    import dataset as data_set
+except:
+    from . import dataset as data_set
+try:
+    from config import *
+except:
+    from .config import *
 
 '''
     FILE: train.py 
@@ -33,7 +50,7 @@ def elmo_train(device):
     data = guess_data()
     elmo_guesser = elmo.ElmoGuesser()
     elmo_guesser.train(data, device)
-    elmo_guesser.save()
+    elmo_guesser.save(ELMO_MODEL_PATH)
 
 
 def buzz_rnn_train(device):
@@ -44,7 +61,7 @@ def buzz_rnn_train(device):
     data = buzz_data(buzzer=True)
     buzzer = buzzer_rnn.RNNBuzzer()
     buzzer.train(data, device)
-    buzzer.save()
+    buzzer.save(BUZZER_MODEL_PATH)
 
 if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
