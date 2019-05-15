@@ -1,4 +1,7 @@
-from config import *
+try:
+    from config import *
+except:
+    from .config import *
 
 def guess(guesses):
     '''
