@@ -2,6 +2,7 @@
 # Third party imports
 from flask import Flask, jsonify, request
 import torch
+import click
 # Local application imports
 try:
     import elmo
