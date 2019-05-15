@@ -1,4 +1,5 @@
 # Standard library imports
+import os
 from typing import List, Dict, Iterable, Optional, Tuple
 # Third party imports
 import spacy
@@ -20,7 +21,7 @@ class ElmoGuesser:
             self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
         except:
             self.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
-        nlp = spacy.load('en')
+        nlp = spacy.load('en_core_web_sm')
         self.tokenizer = Tokenizer(nlp.vocab)
 
     def train(self, training_data, device):

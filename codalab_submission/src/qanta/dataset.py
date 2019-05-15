@@ -83,8 +83,19 @@ class QantaDatabase:
         '''
         split can be {'train', 'dev', 'test'} - gets both the buzzer and guesser folds from the corresponding data file.
         '''
-        dataset_path = os.path.join('src/data', 'qanta.' + split + '.json')
-        # os.path.join('../data/', 'qanta.' + split + '.json')
+        print('OS.PATH: ', os.path)
+        try:
+            dataset_path = os.path.join('../src/data', 'qanta.' + split + '.json')
+            print('DATSET PATH 1: ', dataset_path)
+            with open(dataset_path) as f:
+                self.dataset = json.load(f)
+        except:
+            dataset_path = 'src/data/qanta.' + split + '.json'
+            print('DATASET PATH 2: ', dataset_path)
+            with open(dataset_path) as f:
+                self.dataset = json.load(f)
+
+            # os.path.join('../data/', 'qanta.' + split + '.json')
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
