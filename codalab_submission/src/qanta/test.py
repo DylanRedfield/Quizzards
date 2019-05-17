@@ -87,6 +87,7 @@ def train():
     Train the model calls methods from train.py
     """
     if TRAIN_TYPE == 'elmo':
+        print(device)
         training.elmo_train(device)
     else:
         print('Configure TRAIN_TYPE in config.py')
