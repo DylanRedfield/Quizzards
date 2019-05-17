@@ -23,7 +23,7 @@ class ElmoGuesser:
             self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
         except:
             self.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
-        self.elmo.to(device)
+        self.elmo = self.elmo.to(device)
         nlp = spacy.load('en_core_web_sm')
         self.tokenizer = Tokenizer(nlp.vocab)
 
@@ -32,7 +32,9 @@ class ElmoGuesser:
         '''
         Must be passed the training data - list of questions from the QuizBowlDataset class
         '''
+        
         print("Training Elmo")
+        print('DEVICE: ', device)
 
         # We want questions to store each question tokenized by word
         # and answers stored as a list
@@ -44,18 +46,18 @@ class ElmoGuesser:
             self.answers.append(ques.page)
 
         print("chars to ids")
-        character_ids = batch_to_ids(questions)
-        character_ids.to(device)
+        character_ids = batch_to_ids(questions).to(device)
+        # character_ids = character_ids.to(device)
 
         print("elmo output")
         elmo_output = self.elmo(character_ids)
 
         # index at zero because we only have a single output representation
-        word_embeddings = elmo_output['elmo_representations'][0]
+        word_embeddings = elmo_output['elmo_representations'][0].to(device)
 
         print("mean")
         # A matrix of size (num_train_questions * embed_length)
-        self.question_matrix = word_embeddings.mean(1)
+        self.question_matrix = word_embeddings.mean(1).to(device)
 
         print("train done")
 
@@ -69,13 +71,13 @@ class ElmoGuesser:
             tokens_list = [token.text for token in tokens]
             tokenized.append(tokens_list)
 
-        character_ids = batch_to_ids(tokenized)
+        character_ids = batch_to_ids(tokenized).to(device)
 
         elmo_output = self.elmo(character_ids)
-        word_embeddings = elmo_output['elmo_representations'][0]
+        word_embeddings = elmo_output['elmo_representations'][0].to(device)
 
         # A matrix size (num_input_questions * embed_length)
-        question_embeddings = word_embeddings.mean(1)
+        question_embeddings = word_embeddings.mean(1).to(device)
 
         # Matrix multiplication to find similarities between the rows of the training and input questions
         # into a matrix size (num_input_questions * num_train_questions)
@@ -108,8 +110,9 @@ class ElmoGuesser:
 
     def load(self, path):
         with open(path, 'rb') as f:
+            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             params = pickle.load(f)
-            guesser = ElmoGuesser()
+            guesser = ElmoGuesser(device)
             guesser.question_matrix = params['question_matrix']
             guesser.answers = params['answers']
 
@@ -117,6 +120,7 @@ class ElmoGuesser:
                 guesser.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
             except:
                 guesser.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
+            gueser.elmo = guesser.elmo.to(device)
             nlp = spacy.load('en')
             guesser.tokenizer = Tokenizer(nlp.vocab)
 
