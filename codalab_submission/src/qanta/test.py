@@ -35,7 +35,8 @@ Calls functions in the train.py and the guess.py
 '''
 
 def create_app(enable_batch=True):
-    elmo_guesser = elmo.ElmoGuesser()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    elmo_guesser = elmo.ElmoGuesser(device)
     elmo_guesser.load()
     app = Flask(__name__)
 

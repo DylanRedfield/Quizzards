@@ -29,13 +29,13 @@ except:
 
 def guess_data():
     # TODO: OLIVER: CAN YOU INSERT THE CHOICE TO USE QANTA, SQUAD, and QANTA and SQAD TOGETHER?
-    guess_dataset = data_set.QuizBowlDataset(guesser=True)
+    guess_dataset = data_set.QuizBowlDataset(guesser=True).data()
 
     return guess_dataset
 
 def buzz_data():
     # TODO: OLIVER: CAN YOU INSERT THE CHOICE TO USE QANTA, SQUAD, and QANTA and SQAD TOGETHER?
-    buzz_dataset = data_set.QuizBowlDataset(buzzer=True)
+    buzz_dataset = data_set.QuizBowlDataset(buzzer=True).data()
 
     return buzz_dataset
 
@@ -48,7 +48,7 @@ def elmo_train(device):
     data_set: specified data from either QANTA, SQUAD, TRIVIAQA or a mix
     """
     data = guess_data()
-    elmo_guesser = elmo.ElmoGuesser()
+    elmo_guesser = elmo.ElmoGuesser(device)
     elmo_guesser.train(data, device)
     elmo_guesser.save(ELMO_MODEL_PATH)
 

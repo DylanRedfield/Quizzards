@@ -6,14 +6,16 @@ import spacy
 from spacy.tokenizer import Tokenizer
 from allennlp.modules.elmo import Elmo, batch_to_ids
 import pickle
+
 # Local application imports
 try:
     from config import *
 except:
     from .config import *
 
+
 class ElmoGuesser:
-    def __init__(self):
+    def __init__(self, device):
         self.question_matrix = None
         self.answers = []
         self.i_to_ans = None
@@ -21,6 +23,7 @@ class ElmoGuesser:
             self.elmo = Elmo(OPTIONS_FILE, WEIGHTS_FILE, num_output_representations=1)
         except:
             self.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
+        self.elmo.to(device)
         nlp = spacy.load('en_core_web_sm')
         self.tokenizer = Tokenizer(nlp.vocab)
 
@@ -42,6 +45,8 @@ class ElmoGuesser:
 
         print("chars to ids")
         character_ids = batch_to_ids(questions)
+        character_ids.to(device)
+
         print("elmo output")
         elmo_output = self.elmo(character_ids)
 
@@ -65,6 +70,7 @@ class ElmoGuesser:
             tokenized.append(tokens_list)
 
         character_ids = batch_to_ids(tokenized)
+
         elmo_output = self.elmo(character_ids)
         word_embeddings = elmo_output['elmo_representations'][0]
 
