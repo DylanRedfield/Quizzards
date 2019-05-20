@@ -95,7 +95,7 @@ class ElmoGuesser:
             for j in range(len(max_indicies[i])):
                 idx = max_indicies[i][j]
                 # guesses.append([(self.answers[j], guess_matrix[i, j]) for j in idxs])
-                row.append([(self.answers[idx], max_values[i, j].item())])
+                row.append((self.answers[idx], max_values[i, j].item()))
             guesses.append(row)
 
         return guesses
@@ -121,9 +121,10 @@ class ElmoGuesser:
             except:
                 guesser.elmo = Elmo(OPTIONS_FILE2, WEIGHTS_FILE2, num_output_representations=1)
             gueser.elmo = guesser.elmo.to(device)
-            nlp = spacy.load('en')
+            nlp = spacy.load('en_core_web_sm')
             guesser.tokenizer = Tokenizer(nlp.vocab)
+            print('Elmo Guesser -> load')
 
             return guesser
 
-        print('Elmo Guesser -> load')
+        
